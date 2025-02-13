@@ -1,82 +1,129 @@
+// services/openAiService.js
 import axios from "axios";
 
-const threads = new Map();
+import dotenv from "dotenv";
+import { User } from "../models/index.js";
+import { openAi } from "../utils/config.js";
+
+dotenv.config();
+
+// Create a PostgreSQL connection pool using DATABASE_URL
 
 /**
- * Creates a new conversation thread.
- * Returns an object with a new thread ID and an empty messages array.
+ * Helper function to get a stored thread ID for a given user.
  */
-export const createThread = async () => {
-  const threadId = Date.now().toString();
-  threads.set(threadId, []); // initialize an empty conversation
-  return { threadId, messages: [] };
+const getThreadForUser = async (userId) => {
+  const user = await User.findOne({ where: { id: userId } });
+
+  if (user) {
+    return user?.dataValues?.threadId;
+  }
+  return null;
 };
 
 /**
- * Adds a user message to an existing thread.
+ * Helper function to store a thread ID for a given user.
  */
-export const createMessage = async (threadId, message) => {
-  if (!threads.has(threadId)) {
-    throw new Error("Thread not found");
+const saveThreadForUser = async (userId, threadId) => {
+  const user = await User.findOne({ where: { id: userId } });
+  if (user) {
+    await user.update({ threadId });
   }
-  const conversation = threads.get(threadId);
-  const userMessage = { role: "user", content: message };
-  conversation.push(userMessage);
-  return conversation;
 };
 
 /**
- * Runs the thread by sending the conversation history to ChatGPT
- * and then appending the assistant's reply.
+ * 1) Create a new thread for a user using OpenAI's create thread endpoint.
+ *    - If a thread already exists for the user, return that thread ID.
  */
-export const runThread = async (threadId) => {
-  if (!threads.has(threadId)) {
-    throw new Error("Thread not found");
+export const getOrcreateThread = async (userId) => {
+  let threadId = await getThreadForUser(userId);
+  if (threadId) {
+    return { threadId };
   }
-  const conversation = threads.get(threadId);
 
-  // Prepare the payload for the ChatGPT API
-  const apiUrl = process.env.CHATGPT_API_URL;
-  const apiKey = process.env.CHATGPT_API_KEY;
-  const payload = {
-    model: "gpt-3.5-turbo", // adjust as needed
-    messages: conversation,
-  };
+  const threadObj = openAi?.beta?.threads?.create();
 
-  // Make the API call
-  const response = await axios.post(apiUrl, payload, {
+  threadId = threadObj?.id;
+
+  if (!threadId) {
+    return null;
+  }
+
+  await saveThreadForUser(userId, threadId);
+
+  return { threadId };
+};
+
+/**
+ * 2) Create a user message using OpenAI's create message endpoint.
+ *    - If the user does not yet have a thread, create one first.
+ */
+export const createMessages = async (threadId, role, content) => {
+  const threadMessages = await openAi?.beta?.threads?.messages?.create(
+    threadId,
+    {
+      role,
+      content,
+    }
+  );
+  if (!threadMessages) {
+    return false;
+  }
+  return true;
+};
+
+/**
+ * 3) Run the thread by calling OpenAI's run thread endpoint using the user's thread ID.
+ *    - Returns a streaming response.
+ */
+export const runThread = async (threadId, assistantId) => {
+  const run = await openAi.beta.threads.runs.create(threadId, {
+    assistantId,
+    stream: true,
+    temperature: 0,
+  });
+  return run;
+};
+
+/**
+ * 4) Retrieve conversation history by calling OpenAI's get history endpoint.
+ */
+export const getHistory = async (userId) => {
+  const threadId = await getThreadForUser(userId);
+  if (!threadId) {
+    throw new Error("Thread not found for the user");
+  }
+  // Construct the URL (e.g., https://api.openai.com/v1/threads/{threadId}/messages)
+  const url = `${process.env.OPENAI_GET_HISTORY_URL}/${threadId}/messages`;
+  const response = await axios.get(url, {
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       "Content-Type": "application/json",
     },
   });
-
-  // Assume the API response structure is like:
-  // { choices: [ { message: { role: "assistant", content: "..." } } ] }
-  const assistantMessage = response.data.choices[0].message;
-  conversation.push(assistantMessage);
-  return assistantMessage;
+  return response.data;
 };
 
-/**
- * Manually adds an assistant’s message to the thread.
- */
-export const createAssistant = async (threadId, message) => {
-  if (!threads.has(threadId)) {
-    throw new Error("Thread not found");
-  }
-  const conversation = threads.get(threadId);
-  const assistantMsg = { role: "assistant", content: message };
-  conversation.push(assistantMsg);
-  return assistantMsg;
-};
+export const getAssistantId = async () => {
+  try {
+    const macroTracker = await openAi.beta.assistants.create({
+      instructions: `
+    You are a knowledgeable and certified nutritionist
+    Your role is to provide accurate, evidence-based information on nutrition, dietary advice,
+    and food-related inquiries only. You should focus on topics such as macro- and micronutrients,
+    healthy eating habits, food composition, diet plans, and nutritional research. If a question is asked
+    that falls outside the scope of nutrition and food, politely indicate that your expertise is
+    limited to nutrition. Ensure that all recommendations are cautious, backed by scientific evidence,
+    and avoid making specific medical diagnoses or prescribing personalized treatments without a professional
+    consultation.
+  `,
+      name: "Macro Tracker",
+      model: "gpt-3.5-turbo",
+    });
 
-/**
- * Retrieves the conversation history for a thread.
- */
-export const getHistory = async (threadId) => {
-  if (!threads.has(threadId)) {
-    throw new Error("Thread not found");
+    return macroTracker?.id;
+  } catch (error) {
+    console.log(`Error while creating assistant`, error?.messages);
+    return null;
   }
-  return threads.get(threadId);
 };

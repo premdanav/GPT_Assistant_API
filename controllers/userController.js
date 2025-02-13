@@ -24,8 +24,8 @@ export const getUser = async (req, res) => {
 
 export const createUser = async (req, res) => {
   try {
-    const { name, email } = req.body;
-    const user = await userService.createUser(name, email);
+    const { name, email, threadId } = req.body;
+    const user = await userService.createUser(name, email, threadId);
     res.status(201).json(user);
   } catch (err) {
     console.error(err);

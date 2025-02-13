@@ -1,60 +1,75 @@
 import * as openAiService from "../services/openAiService.js";
 
-export const createThread = async (req, res) => {
+export const createAiChat = async (req, res) => {
   try {
-    const thread = await openAiService.createThread();
-    res.status(201).json(thread);
-  } catch (err) {
-    console.error("Error in createThread:", err);
-    res.status(500).json({ error: err.message });
-  }
-};
-
-export const createMessage = async (req, res) => {
-  try {
-    const { id: threadId } = req.params;
-    const { message } = req.body;
-    if (!message) {
-      return res.status(400).json({ error: "Message content is required" });
+    const { userId, message, content, role } = req?.body;
+    if (!userId || !message || !content || !role) {
+      return res
+        .status(400)
+        .json({ error: "userId, message and content are required" });
     }
-    const conversation = await openAiService.createMessage(threadId, message);
-    res.status(201).json(conversation);
-  } catch (err) {
-    console.error("Error in createMessage:", err);
-    res.status(500).json({ error: err.message });
-  }
-};
 
-export const runThread = async (req, res) => {
-  try {
-    const { id: threadId } = req.params;
-    const assistantResponse = await openAiService.runThread(threadId);
-    res.status(200).json(assistantResponse);
+    const threadId = openAiService.getOrcreateThread(userId);
+    if (!threadId) {
+      return res.status(400).json({ error: "Failed to create thread" });
+    }
+
+    const messageCreated = openAiService.createMessages(
+      threadId,
+      role,
+      content
+    );
+
+    if (!messageCreated) {
+      return res.status(400).json({ error: "Failed to create message" });
+    }
+
+    const assistantId = process.env.ASSISTANT_ID;
+
+    const openAiRes = openAiService?.runThread(threadId, assistantId);
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+
+    openAiRes.on("data", (chunk) => {
+      console.log("data", chunk.toString());
+      res.write(`data: ${chunk.toString()}\n\n`);
+    });
+    openAiRes.on("end", () => {
+      res.write("data: [DONE]\n\n");
+      res.end();
+    });
+    openAiRes.on("error", (error) => {
+      console.error("Error streaming response:", error);
+      res.end();
+    });
   } catch (err) {
-    console.error("Error in runThread:", err);
+    console.error("Error in createAiChat:", err);
     res.status(500).json({ error: err.message });
   }
 };
 
 export const createAssistant = async (req, res) => {
   try {
-    const { id: threadId } = req.params;
-    const { message } = req.body;
-    if (!message) {
-      return res.status(400).json({ error: "Assistant message is required" });
-    }
-    const assistantMsg = await openAiService.createAssistant(threadId, message);
-    res.status(200).json(assistantMsg);
+    const assistantId = await openAiService.getAssistantId();
+    res.status(200).json({ assistantId });
   } catch (err) {
-    console.error("Error in createAssistant:", err);
+    console.error("Error in getAssistantId:", err);
     res.status(500).json({ error: err.message });
   }
 };
-
+/**
+ * Retrieve the conversation history for a user.
+ * Expects: userId as a URL parameter.
+ */
 export const getHistory = async (req, res) => {
   try {
-    const { id: threadId } = req.params;
-    const history = await openAiService.getHistory(threadId);
+    const { userId } = req.params;
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required" });
+    }
+    const history = await openAiService.getHistory(userId);
     res.status(200).json(history);
   } catch (err) {
     console.error("Error in getHistory:", err);

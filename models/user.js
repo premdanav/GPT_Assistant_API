@@ -20,8 +20,8 @@ export default (sequelize) => {
       },
       threadId: {
         type: DataTypes.STRING(100),
-        allowNull: true,
-        unique: true,
+        allowNull: false,
+        unique: false,
       },
     },
     {

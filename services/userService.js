@@ -8,8 +8,8 @@ export const getUserById = async (id) => {
   return await User.findByPk(id);
 };
 
-export const createUser = async (name, email) => {
-  return await User.create({ name, email });
+export const createUser = async (name, email, threadId) => {
+  return await User.create({ name, email, threadId });
 };
 
 export const updateUser = async (id, name, email) => {
