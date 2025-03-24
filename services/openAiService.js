@@ -117,7 +117,7 @@ export const getAssistantId = async () => {
     and avoid making specific medical diagnoses or prescribing personalized treatments without a professional
     consultation.
   `,
-      name: "Macro Tracker",
+      name: "Nutrition Connoisseur",
       model: "gpt-3.5-turbo",
     });
 

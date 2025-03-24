@@ -5,6 +5,5 @@ const router = express.Router();
 
 router.post("/run", openAiController.createAiChat);
 router.put("/assistant", openAiController.createAssistant);
-// router.get("/thread/:id/history", messageController.getHistory);
 
 export default router;

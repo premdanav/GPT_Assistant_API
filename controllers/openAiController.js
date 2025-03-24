@@ -53,16 +53,14 @@ export const createAiChat = async (req, res) => {
 export const createAssistant = async (req, res) => {
   try {
     const assistantId = await openAiService.getAssistantId();
+
     res.status(200).json({ assistantId });
   } catch (err) {
     console.error("Error in getAssistantId:", err);
     res.status(500).json({ error: err.message });
   }
 };
-/**
- * Retrieve the conversation history for a user.
- * Expects: userId as a URL parameter.
- */
+
 export const getHistory = async (req, res) => {
   try {
     const { userId } = req.params;
